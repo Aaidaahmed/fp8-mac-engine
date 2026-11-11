@@ -29,7 +29,7 @@ module fp8_multiplier_tb;
         input [21:0] expected_fraction,
         input expected_sign,
         input [2:0] expected_class,
-        input [80*8:1] test_name
+        input [255:0] test_name
     );
     begin
         a = input_a;
@@ -37,25 +37,22 @@ module fp8_multiplier_tb;
         #10;
 
         $display("\n%s", test_name);
-        $display("A = %b, B = %b", a, b);
-        $display("Exponent = %0d", normalized_exponent);
-        $display("Fraction = %b", normalized_fraction);
-        $display("Sign = %b", fraction_sign);
-        $display("Class = %b", product_class_out);
 
         if (normalized_exponent === expected_exp &&
             normalized_fraction === expected_fraction &&
             fraction_sign === expected_sign &&
             product_class_out === expected_class) begin
-            $display("RESULT: PASS");
+            $display("PASS");
             pass_count = pass_count + 1;
         end
         else begin
-            $display("RESULT: FAIL");
-            $display("Expected exponent = %0d", expected_exp);
-            $display("Expected fraction = %b", expected_fraction);
-            $display("Expected sign = %b", expected_sign);
-            $display("Expected class = %b", expected_class);
+            $display("FAIL");
+            $display("Expected: exp=%0d frac=%b sign=%b class=%b",
+                expected_exp, expected_fraction,
+                expected_sign, expected_class);
+            $display("Actual:   exp=%0d frac=%b sign=%b class=%b",
+                normalized_exponent, normalized_fraction,
+                fraction_sign, product_class_out);
             fail_count = fail_count + 1;
         end
     end
@@ -67,68 +64,61 @@ module fp8_multiplier_tb;
         $display("       FP8 MULTIPLIER TESTS");
         $display("==================================");
 
-        // 1. Normal x Normal: 2.5 x 1.0 = 2.5
-        run_test(
-            8'b01000010, 8'b00111000,
-            1, {7'b1010000,15'b0}, 0, 3'b010,
-            "TEST 1: Normal x Normal"
-        );
+        // 1. Normal x Normal
+        run_test(8'h42, 8'h38, 1,
+            {7'b1010000,15'b0}, 0, 3'b010, "TEST 1: Normal x Normal");
 
-        // 2. Normal x Normal: 1.5 x 1.5 = 2.25
-        run_test(
-            8'b00111100, 8'b00111100,
-            1, {7'b1001000,15'b0}, 0, 3'b010,
-            "TEST 2: Normal x Normal"
-        );
+        // 2. Normal x Normal
+        run_test(8'h3C, 8'h3C, 1,
+            {7'b1001000,15'b0}, 0, 3'b010, "TEST 2: 1.5 x 1.5");
 
-        // 3. Normal x Subnormal: 1.0 x 0.125 = 0.125
-        run_test(
-            8'b00111000, 8'b00000001,
-            -9, {7'b1000000,15'b0}, 0, 3'b010,
-            "TEST 3: Normal x Subnormal"
-        );
+        // 3. Normal x Smallest Subnormal
+        run_test(8'h38, 8'h01, -9,
+            {7'b1000000,15'b0}, 0, 3'b010, "TEST 3: Normal x Subnormal");
 
-        // 4. Subnormal x Subnormal: 0.125 x 0.125 = 0.015625
-        run_test(
-            8'b00000001, 8'b00000001,
-            -18, {7'b1000000,15'b0}, 0, 3'b010,
-            "TEST 4: Subnormal x Subnormal"
-        );
+        // 4. Smallest Subnormal x Smallest Subnormal
+        run_test(8'h01, 8'h01, -18,
+            {7'b1000000,15'b0}, 0, 3'b010, "TEST 4: Subnormal x Subnormal");
 
         // 5. Zero x Normal
-        run_test(
-            8'b00000000, 8'b00111000,
-            0, 22'b0, 0, 3'b000,
-            "TEST 5: Zero x Normal"
-        );
+        run_test(8'h00, 8'h38, 0,
+            22'b0, 0, 3'b000, "TEST 5: Zero x Normal");
 
         // 6. NaN x Normal
-        run_test(
-            8'b01111111, 8'b00111000,
-            0, 22'b0, 0, 3'b100,
-            "TEST 6: NaN x Normal"
-        );
+        run_test(8'h7F, 8'h38, 0,
+            22'b0, 0, 3'b100, "TEST 6: NaN x Normal");
 
-        // 7. Negative x Positive: -1.0 x 1.0
-        run_test(
-            8'b10111000, 8'b00111000,
-            0, {7'b1000000,15'b0}, 1, 3'b010,
-            "TEST 7: Negative x Positive"
-        );
+        // 7. NaN x Zero: NaN takes priority
+        run_test(8'h7F, 8'h00, 0,
+            22'b0, 0, 3'b100, "TEST 7: NaN x Zero");
 
-        // 8. Negative x Negative: -1.0 x -1.0
-        run_test(
-            8'b10111000, 8'b10111000,
-            0, {7'b1000000,15'b0}, 0, 3'b010,
-            "TEST 8: Negative x Negative"
-        );
+        // 8. Negative x Positive
+        run_test(8'hB8, 8'h38, 0,
+            {7'b1000000,15'b0}, 1, 3'b010, "TEST 8: Negative x Positive");
 
-        // 9. Positive x Negative: 1.0 x -1.0
-        run_test(
-            8'b00111000, 8'b10111000,
-            0, {7'b1000000,15'b0}, 1, 3'b010,
-            "TEST 9: Positive x Negative"
-        );
+        // 9. Negative x Negative
+        run_test(8'hB8, 8'hB8, 0,
+            {7'b1000000,15'b0}, 0, 3'b010, "TEST 9: Negative x Negative");
+
+        // 10. Positive x Negative
+        run_test(8'h38, 8'hB8, 0,
+            {7'b1000000,15'b0}, 1, 3'b010, "TEST 10: Positive x Negative");
+
+        // 11. Subnormal fraction = 2
+        run_test(8'h02, 8'h38, -8,
+            {7'b1000000,15'b0}, 0, 3'b010, "TEST 11: Subnormal fraction 2");
+
+        // 12. Subnormal fraction = 3
+        run_test(8'h03, 8'h38, -8,
+            {7'b1100000,15'b0}, 0, 3'b010, "TEST 12: Subnormal fraction 3");
+
+        // 13. Maximum finite x 1.0
+        run_test(8'h7E, 8'h38, 8,
+            {7'b1110000,15'b0}, 0, 3'b010, "TEST 13: Maximum finite x 1.0");
+
+        // 14. Maximum finite x Maximum finite
+        run_test(8'h7E, 8'h7E, 17,
+            {7'b1100010,15'b0}, 0, 3'b010, "TEST 14: Maximum finite x Maximum finite");
 
         $display("\n==================================");
         $display("           TEST SUMMARY");
