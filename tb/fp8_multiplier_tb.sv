@@ -13,6 +13,8 @@ module fp8_multiplier_tb;
     integer pass_count = 0;
     integer fail_count = 0;
 
+    integer i, j;
+
     fp8_multiplier DUT (
         .a(a),
         .b(b),
@@ -22,110 +24,153 @@ module fp8_multiplier_tb;
         .product_class_out(product_class_out)
     );
 
-    task automatic run_test(
-        input [7:0] input_a,
-        input [7:0] input_b,
-        input integer expected_exp,
-        input [21:0] expected_fraction,
-        input expected_sign,
-        input [2:0] expected_class,
-        input [255:0] test_name
+    task automatic check_pair(
+        input logic [7:0] input_a,
+        input logic [7:0] input_b
     );
-    begin
-        a = input_a;
-        b = input_b;
-        #10;
 
-        $display("\n%s", test_name);
+        integer sig_a_ref, sig_b_ref;
+        integer exp_a_ref, exp_b_ref;
+        integer product_ref;
+        integer exp_ref;
 
-        if (normalized_exponent === expected_exp &&
-            normalized_fraction === expected_fraction &&
-            fraction_sign === expected_sign &&
-            product_class_out === expected_class) begin
-            $display("PASS");
-            pass_count = pass_count + 1;
-        end
-        else begin
-            $display("FAIL");
-            $display("Expected: exp=%0d frac=%b sign=%b class=%b",
-                expected_exp, expected_fraction,
-                expected_sign, expected_class);
-            $display("Actual:   exp=%0d frac=%b sign=%b class=%b",
-                normalized_exponent, normalized_fraction,
-                fraction_sign, product_class_out);
-            fail_count = fail_count + 1;
-        end
+        reg [6:0] fraction_ref;
+        reg [21:0] expected_fraction;
+        reg expected_sign;
+        reg [2:0] expected_class;
+
+        reg class_a_nan, class_b_nan;
+        reg class_a_zero, class_b_zero;
+
+        begin
+            a = input_a;
+            b = input_b;
+
+            #1;
+
+            // Classify A and B
+            class_a_nan =
+                (input_a[6:3] == 4'b1111 &&
+                 input_a[2:0] == 3'b111);
+
+            class_b_nan =
+                (input_b[6:3] == 4'b1111 &&
+                 input_b[2:0] == 3'b111);
+
+            class_a_zero =
+                (input_a[6:0] == 7'b0000000);
+
+            class_b_zero =
+                (input_b[6:0] == 7'b0000000);
+
+            // Expected sign
+            expected_sign = input_a[7] ^ input_b[7];
+
+            // Expected product classification
+            if (class_a_nan || class_b_nan)
+                expected_class = 3'b100;
+            else if (class_a_zero || class_b_zero)
+                expected_class = 3'b000;
+            else
+                expected_class = 3'b010;
+
+            // Decode A
+            if (input_a[6:3] == 0) begin
+                sig_a_ref = input_a[2:0];
+                exp_a_ref = (sig_a_ref == 0) ? 0 : -6;
+            end
+            else begin
+                sig_a_ref = 8 + input_a[2:0];
+                exp_a_ref = input_a[6:3] - 7;
+            end
+
+            // Decode B
+            if (input_b[6:3] == 0) begin
+                sig_b_ref = input_b[2:0];
+                exp_b_ref = (sig_b_ref == 0) ? 0 : -6;
+            end
+            else begin
+                sig_b_ref = 8 + input_b[2:0];
+                exp_b_ref = input_b[6:3] - 7;
+            end
+
+            exp_ref = exp_a_ref + exp_b_ref;
+
+            // Calculate expected product
+            product_ref = sig_a_ref * sig_b_ref;
+
+            if (product_ref != 0) begin
+
+                if (product_ref >= 128) begin
+                    product_ref = product_ref >> 1;
+                    exp_ref = exp_ref + 1;
+                end
+                else begin
+                    while (product_ref < 64) begin
+                        product_ref = product_ref << 1;
+                        exp_ref = exp_ref - 1;
+                    end
+                end
+            end
+
+            fraction_ref = product_ref[6:0];
+            expected_fraction = {fraction_ref, 15'b0};
+
+            // Compare against DUT
+            if (expected_class == 3'b000 ||
+    expected_class == 3'b100) begin
+
+    if (fraction_sign === expected_sign &&
+        product_class_out === expected_class) begin
+        pass_count = pass_count + 1;
     end
+    else begin
+        fail_count = fail_count + 1;
+    end
+
+end
+        
+else begin
+
+    if (normalized_exponent === exp_ref &&
+        normalized_fraction === expected_fraction &&
+        fraction_sign === expected_sign &&
+        product_class_out === expected_class) begin
+
+        pass_count = pass_count + 1;
+    end
+    else begin
+        fail_count = fail_count + 1;
+    end
+
+end
+        end
     endtask
 
     initial begin
 
-        $display("\n==================================");
-        $display("       FP8 MULTIPLIER TESTS");
-        $display("==================================");
+        $display("\n======================================");
+        $display("     EXHAUSTIVE FP8 MULTIPLIER TEST");
+        $display("======================================");
 
-        // 1. Normal x Normal
-        run_test(8'h42, 8'h38, 1,
-            {7'b1010000,15'b0}, 0, 3'b010, "TEST 1: Normal x Normal");
+        for (i = 0; i < 256; i = i + 1) begin
+            for (j = 0; j < 256; j = j + 1) begin
+                check_pair(i[7:0], j[7:0]);
+            end
+        end
 
-        // 2. Normal x Normal
-        run_test(8'h3C, 8'h3C, 1,
-            {7'b1001000,15'b0}, 0, 3'b010, "TEST 2: 1.5 x 1.5");
+        $display("\n======================================");
+        $display("             TEST SUMMARY");
+        $display("======================================");
+        $display("Total combinations : 65536");
+        $display("Passed             : %0d", pass_count);
+        $display("Failed             : %0d", fail_count);
+        $display("======================================");
 
-        // 3. Normal x Smallest Subnormal
-        run_test(8'h38, 8'h01, -9,
-            {7'b1000000,15'b0}, 0, 3'b010, "TEST 3: Normal x Subnormal");
-
-        // 4. Smallest Subnormal x Smallest Subnormal
-        run_test(8'h01, 8'h01, -18,
-            {7'b1000000,15'b0}, 0, 3'b010, "TEST 4: Subnormal x Subnormal");
-
-        // 5. Zero x Normal
-        run_test(8'h00, 8'h38, 0,
-            22'b0, 0, 3'b000, "TEST 5: Zero x Normal");
-
-        // 6. NaN x Normal
-        run_test(8'h7F, 8'h38, 0,
-            22'b0, 0, 3'b100, "TEST 6: NaN x Normal");
-
-        // 7. NaN x Zero: NaN takes priority
-        run_test(8'h7F, 8'h00, 0,
-            22'b0, 0, 3'b100, "TEST 7: NaN x Zero");
-
-        // 8. Negative x Positive
-        run_test(8'hB8, 8'h38, 0,
-            {7'b1000000,15'b0}, 1, 3'b010, "TEST 8: Negative x Positive");
-
-        // 9. Negative x Negative
-        run_test(8'hB8, 8'hB8, 0,
-            {7'b1000000,15'b0}, 0, 3'b010, "TEST 9: Negative x Negative");
-
-        // 10. Positive x Negative
-        run_test(8'h38, 8'hB8, 0,
-            {7'b1000000,15'b0}, 1, 3'b010, "TEST 10: Positive x Negative");
-
-        // 11. Subnormal fraction = 2
-        run_test(8'h02, 8'h38, -8,
-            {7'b1000000,15'b0}, 0, 3'b010, "TEST 11: Subnormal fraction 2");
-
-        // 12. Subnormal fraction = 3
-        run_test(8'h03, 8'h38, -8,
-            {7'b1100000,15'b0}, 0, 3'b010, "TEST 12: Subnormal fraction 3");
-
-        // 13. Maximum finite x 1.0
-        run_test(8'h7E, 8'h38, 8,
-            {7'b1110000,15'b0}, 0, 3'b010, "TEST 13: Maximum finite x 1.0");
-
-        // 14. Maximum finite x Maximum finite
-        run_test(8'h7E, 8'h7E, 17,
-            {7'b1100010,15'b0}, 0, 3'b010, "TEST 14: Maximum finite x Maximum finite");
-
-        $display("\n==================================");
-        $display("           TEST SUMMARY");
-        $display("==================================");
-        $display("Passed: %0d", pass_count);
-        $display("Failed: %0d", fail_count);
-        $display("==================================");
+        if (fail_count == 0)
+            $display("ALL TESTS PASSED!");
+        else
+            $display("SOME TESTS FAILED!");
 
         $finish;
     end
