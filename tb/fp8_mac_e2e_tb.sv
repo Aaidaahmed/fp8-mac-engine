@@ -27,6 +27,15 @@ module fp8_mac_e2e_tb;
         .fp8_out(fp8_out)
     );
 
+        // Separate FP32-to-FP8 converter for boundary testing
+    logic [31:0] boundary_fp32;
+    wire [7:0] boundary_fp8;
+
+    fp32_to_fp8 boundary_converter (
+        .acc_out(boundary_fp32),
+        .conv_out(boundary_fp8)
+    );
+
     // Clock generation: 10 ns period
     always #5 clk = ~clk;
 
@@ -92,6 +101,31 @@ module fp8_mac_e2e_tb;
     end
     endtask
 
+
+        // Check FP32 to FP8 conversion result
+    task automatic check_result(
+        input logic [31:0] test_fp32,
+        input logic [7:0] expected_fp8,
+        input string test_name
+    );
+    begin
+        boundary_fp32 = test_fp32;
+        #1;
+
+        if (boundary_fp8 === expected_fp8) begin
+            $display("PASS: %s | FP32=%h | FP8=%h",
+                     test_name, test_fp32, boundary_fp8);
+            passed = passed + 1;
+        end
+        else begin
+            $display("FAIL: %s | Expected FP8=%h | Got FP8=%h",
+                     test_name, expected_fp8, boundary_fp8);
+            failed = failed + 1;
+        end
+    end
+    endtask
+
+
     initial begin
 
         clk = 0;
@@ -99,6 +133,7 @@ module fp8_mac_e2e_tb;
         en = 0;
         input_a = 0;
         input_b = 0;
+        boundary_fp32 = 32'b0;
 
         $dumpfile("fp8_mac_e2e.vcd");
         $dumpvars(0, fp8_mac_e2e_tb);

@@ -1,14 +1,19 @@
+`include "fp8_defs.vh"
+
+
 module fp32_to_fp8(
-    input logic [31:0]acc_out,
-    output logic [7:0]conv_out
+    input wire [31:0] acc_out,
+    output reg [7:0] conv_out
 );
 
-import fp8_defs_pkg::*;
+// Bias constants (replacing fp8_defs_pkg import)
+parameter FP32_BIAS = 127;
+parameter FP8_BIAS  = 7;
 
 //internal signals
-logic sign;           // 1 bit
-logic [7:0]exponent;  // 8 bits
-logic [22:0]fraction; // 23 bits 
+wire sign;           // 1 bit
+wire [7:0] exponent;  // 8 bits
+wire [22:0] fraction; // 23 bits 
 
 //field extraction
 assign sign = acc_out[31];
@@ -30,31 +35,31 @@ assign fraction = acc_out[22:0];
                           [[Efp8 = Efp32 - 120]]
                           -----------------------*/
 
-logic signed[8:0]conv_exponent;/* because converted exponentcan
+reg signed [8:0] conv_exponent;/* because converted exponentcan
 reach 134 for large normal fp32 numbers. thats why it is 9 bit */
-logic is_zero;
-logic is_subnormal;
-logic is_normal;
-logic is_special;
-logic is_infinity;
-logic is_nan;
+wire is_zero;
+wire is_subnormal;
+wire is_normal;
+wire is_special;
+wire is_infinity;
+wire is_nan;
 
-logic [23:0] significand;
-logic [23:0] normalized_significand;
+wire [23:0] significand;
+reg [23:0] normalized_significand;
 
-logic [4:0] leading_zeros;
-logic signed [9:0] adjusted_exponent;
-logic signed [9:0] rounded_exp;
+reg [4:0] leading_zeros;
+reg signed [9:0] adjusted_exponent;
+reg signed [9:0] rounded_exp;
 
-logic [4:0] rounded_normal;
-logic [23:0] sub_quotient;
+reg [4:0] rounded_normal;
+reg [23:0] sub_quotient;
 
-logic guard_bit;
-logic sticky_bit;
+reg guard_bit;
+reg sticky_bit;
 
 integer i;
 integer shift_amt;
-logic [3:0] fp8_exp_field;
+reg [3:0] fp8_exp_field;
 
 // NORMAL FP32 INPUTS
 assign conv_exponent = $signed({1'b0, exponent}) - 
